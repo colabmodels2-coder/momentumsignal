@@ -13,33 +13,14 @@ from src.charts import (
 )
 
 # =====================================================
-# Basic helpers (simple & explicit)
-# =====================================================
-
-def to_long(df, value_name):
-    return df.melt(
-        id_vars="date",
-        var_name="country",
-        value_name=value_name
-    ).sort_values("date")
-
-
-def forward_1m_returns(ts):
-    """
-    Forward 1M total return in PERCENT terms
-    """
-    ts_long = to_long(ts, "level")
-    ts_long["fwd_1m_pct"] = (
-        ts_long.groupby("country")["level"].shift(-1) / ts_long["level"] - 1
-    ) * 100
-    return ts_long.dropna(subset=["fwd_1m_pct"])
-
-
-# =====================================================
 # Streamlit setup
 # =====================================================
 
-st.set_page_config(page_title="Momentum Signal Dashboard", layout="wide")
+st.set_page_config(
+    page_title="Momentum Signal Dashboard",
+    layout="wide"
+)
+
 st.title("📊 Momentum Signal Dashboard")
 
 uploaded_file = st.file_uploader(
@@ -50,11 +31,9 @@ uploaded_file = st.file_uploader(
 if uploaded_file is None:
     st.stop()
 
-
 @st.cache_data(show_spinner=False)
 def cached_load(file):
     return load_all_data(file)
-
 
 (
     country_ts,
@@ -63,14 +42,13 @@ def cached_load(file):
     s1,
     s2,
     s3,
-    score_filter,  # kept but not used here
-    score,         # SCORE tab (absolute levels)
+    score_filter,   # unused here
+    score,          # universe
 ) = cached_load(uploaded_file)
-
 
 page = st.sidebar.radio(
     "Page",
-    ["Performance", "Signals", "Signal Summary", "Signal Analytics"]
+    ["Performance", "Signals", "Signal Summary", "Diagnostics & Governance"]
 )
 
 # =====================================================
@@ -99,8 +77,8 @@ if page == "Performance":
 
     st.dataframe(
         current_signal[["rank", "country"]],
-        use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        use_container_width=True
     )
 
     st.subheader("📈 Strategy Performance")
@@ -121,9 +99,8 @@ if page == "Performance":
     with col4:
         st.pyplot(plot_return_distribution(perf, window=12))
 
-
 # =====================================================
-# SIGNALS PAGE (per‑country oversight)
+# SIGNALS PAGE
 # =====================================================
 
 if page == "Signals":
@@ -170,9 +147,8 @@ if page == "Signals":
         fig.autofmt_xdate()
         st.pyplot(fig)
 
-
 # =====================================================
-# SIGNAL SUMMARY PAGE (signal‑date aligned)
+# SIGNAL SUMMARY PAGE
 # =====================================================
 
 if page == "Signal Summary":
@@ -189,139 +165,145 @@ if page == "Signal Summary":
     )
 
     score_row = score.set_index("date").loc[selected_date]
-    summary = pd.DataFrame({"score": score_row})
+    summary = pd.DataFrame({"Score": score_row})
 
-    summary["tr"] = country_ts.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["s1"] = s1.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["s2"] = s2.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["s3"] = s3.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["TR"] = country_ts.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["S1"] = s1.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["S2"] = s2.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["S3"] = s3.set_index("date").loc[selected_date].reindex(summary.index)
 
-    summary["pass_trend"] = (
-        (summary["tr"] > summary["s1"]) &
-        (summary["tr"] > summary["s2"]) &
-        (summary["tr"] > summary["s3"])
-    ).fillna(False)
+    summary["Pass Trend"] = (
+        (summary["TR"] > summary["S1"]) &
+        (summary["TR"] > summary["S2"]) &
+        (summary["TR"] > summary["S3"])
+    )
 
-    fails = summary[~summary["pass_trend"]].sort_values("score")
-    passes = summary[summary["pass_trend"]].sort_values("score")
+    fails = summary[~summary["Pass Trend"]].sort_values("Score")
+    passes = summary[summary["Pass Trend"]].sort_values("Score")
 
     plot_df = pd.concat([fails, passes])
-    colours = ["red"] * len(fails) + ["tab:blue"] * len(passes)
+    colours = ["#d62728"] * len(fails) + ["#1f77b4"] * len(passes)
 
     fig, ax = plt.subplots(figsize=(9, max(6, 0.28 * len(plot_df))))
-    ax.barh(plot_df.index, plot_df["score"], color=colours, edgecolor="black", alpha=0.85)
+    ax.barh(plot_df.index, plot_df["Score"], color=colours)
     ax.set_title(f"Score vs Trend Confirmation — {selected_date.strftime('%B %Y')}")
     ax.set_xlabel("Score")
     ax.grid(axis="x")
     st.pyplot(fig)
 
-
 # =====================================================
-# SIGNAL ANALYTICS PAGE (clean & robust)
+# DIAGNOSTICS & GOVERNANCE PAGE
 # =====================================================
 
-if page == "Signal Analytics":
+if page == "Diagnostics & Governance":
 
-    st.header("🧪 Signal Analytics (Absolute Scores & Forward Returns)")
-
-    score_long = to_long(score, "score")
-    fwd = forward_1m_returns(country_ts)
-
-    merged = score_long.merge(
-        fwd,
-        on=["date", "country"],
-        how="inner"
-    )
+    st.header("🧭 Diagnostics & Governance")
 
     signal_dates = signal["date"].drop_duplicates().sort_values()
 
-    current_date = st.selectbox(
+    selected_date = st.selectbox(
         "Select signal date",
         signal_dates,
         index=len(signal_dates) - 1,
         format_func=lambda d: d.strftime("%B %Y")
     )
 
-    st.subheader("1️⃣ Current Absolute Score Levels")
+    st.caption(f"Diagnostics evaluated as of {selected_date.date()}")
 
-    current_scores = score_long[score_long["date"] == current_date]
+    # -------------------------------------------------
+    # 2A — Why is a country failing?
+    # -------------------------------------------------
+    st.subheader("1️⃣ Why is a country failing the trend filter?")
+
+    diag = pd.DataFrame(index=score.columns)
+    diag["TR"] = country_ts.set_index("date").loc[selected_date]
+    diag["S1"] = s1.set_index("date").loc[selected_date]
+    diag["S2"] = s2.set_index("date").loc[selected_date]
+    diag["S3"] = s3.set_index("date").loc[selected_date]
+
+    def fail_reason(r):
+        if r["TR"] <= r["S1"]:
+            return "S1"
+        if r["TR"] <= r["S2"]:
+            return "S2"
+        if r["TR"] <= r["S3"]:
+            return "S3"
+        return "Pass"
+
+    diag["Status"] = diag.apply(
+        lambda r: "Pass" if (
+            r["TR"] > r["S1"] and r["TR"] > r["S2"] and r["TR"] > r["S3"]
+        ) else "Fail",
+        axis=1
+    )
+    diag["Failed Signal"] = diag.apply(fail_reason, axis=1)
+
     st.dataframe(
-        current_scores.sort_values("score", ascending=False),
+        diag.sort_values("Status"),
         use_container_width=True
     )
 
-    st.subheader("2️⃣ Forward 1‑Month Returns at Similar Score Levels")
+    # -------------------------------------------------
+    # 2D — Regime stability
+    # -------------------------------------------------
+    st.subheader("2️⃣ Regime Stability (Full History)")
 
-    country = st.selectbox(
-        "Select country",
-        current_scores["country"].sort_values().unique()
+    def pass_rate(country):
+        tr = country_ts.set_index("date")[country]
+        s1c = s1.set_index("date")[country]
+        s2c = s2.set_index("date")[country]
+        s3c = s3.set_index("date")[country]
+        return ((tr > s1c) & (tr > s2c) & (tr > s3c)).mean() * 100
+
+    stability = pd.DataFrame({
+        "Pass Rate (%)": {c: pass_rate(c) for c in score.columns}
+    }).sort_values("Pass Rate (%)")
+
+    st.dataframe(
+        stability.style.format({"Pass Rate (%)": "{:.1f}%"}),
+        use_container_width=True
     )
 
-    current_score = current_scores.loc[
-        current_scores["country"] == country, "score"
-    ].iloc[0]
+    # -------------------------------------------------
+    # 4G — Regime context
+    # -------------------------------------------------
+    st.subheader("3️⃣ Regime Context – Have we seen this before?")
 
-    # Simple, stable conditioning band
-    lower = current_score * 0.9
-    upper = current_score * 1.1
+    def breadth(dt):
+        tr = country_ts.set_index("date").loc[dt]
+        s1d = s1.set_index("date").loc[dt]
+        s2d = s2.set_index("date").loc[dt]
+        s3d = s3.set_index("date").loc[dt]
+        return ((tr > s1d) & (tr > s2d) & (tr > s3d)).mean()
 
-    bucket = merged[
-        (merged["country"] == country) &
-        (merged["score"].between(lower, upper))
-    ]
+    breadth_series = pd.Series({d: breadth(d) for d in signal_dates})
 
-    st.caption(
-        f"Conditioning on score ≈ {current_score:.2f} (±10%)"
-    )
+    current_breadth = breadth(selected_date)
+    percentile = (breadth_series <= current_breadth).mean() * 100
 
     col1, col2 = st.columns(2)
-
     with col1:
-        fig, ax = plt.subplots()
-        ax.hist(bucket["fwd_1m_pct"], bins=20)
-        ax.axvline(0, color="red", linestyle="--")
-        ax.set_xlabel("Forward 1‑Month Return (%)")
-        ax.set_title("Distribution")
-        st.pyplot(fig)
-
+        st.metric("Trend Breadth (%)", f"{current_breadth * 100:.1f}%")
     with col2:
-        st.metric(
-            "Probability of Positive Return",
-            f"{(bucket['fwd_1m_pct'] > 0).mean():.1%}"
-        )
-        st.metric(
-            "Median Forward Return",
-            f"{bucket['fwd_1m_pct'].median():.2f}%"
-        )
-
-    st.subheader("3️⃣ Score → Forward Return Sanity Check")
-
-    merged["score_bucket"] = pd.qcut(
-        merged["score"],
-        8,
-        duplicates="drop"
-    )
-
-    bucket_stats = (
-        merged
-        .groupby("score_bucket")["fwd_1m_pct"]
-        .agg(["mean", "median", lambda x: (x > 0).mean() * 100])
-        .rename(columns={"<lambda_0>": "hit_rate"})
-    )
+        st.metric("Historical Percentile", f"{percentile:.1f}%")
 
     fig, ax = plt.subplots()
-    ax.plot(bucket_stats.index.astype(str), bucket_stats["mean"], marker="o")
-    ax.set_ylabel("Avg Forward 1‑Month Return (%)")
-    ax.set_title("Score Bucket vs Forward Returns")
+    ax.plot(breadth_series.index, breadth_series.values * 100)
+    ax.axvline(selected_date, color="red", linestyle="--")
+    ax.set_ylabel("% Passing Trend")
+    ax.set_title("Trend Breadth Over Time")
     st.pyplot(fig)
 
-    st.dataframe(
-        bucket_stats.style.format(
-            {
-                "mean": "{:.2f}%",
-                "median": "{:.2f}%",
-                "hit_rate": "{:.1f}%"
-            }
-        ),
-        use_container_width=True
+    # -------------------------------------------------
+    # I — IC readiness
+    # -------------------------------------------------
+    st.subheader("4️⃣ IC Readiness")
+
+    st.write(
+        "This page provides governance‑grade diagnostics:\n\n"
+        "- Explicit reasons for each country passing or failing trend\n"
+        "- Long‑run stability statistics by country\n"
+        "- Regime context vs historical breadth\n\n"
+        "All views are strictly aligned to Signal‑date holdings "
+        "and use the Score tab as the full cross‑sectional universe."
     )
