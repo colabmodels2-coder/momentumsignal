@@ -1,4 +1,4 @@
-import streamlit as st
+lit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -42,9 +42,28 @@ def cached_load(file):
     s1,
     s2,
     s3,
-    score_filter,   # unused here
-    score,          # universe
+    score_filter,   # not used here
+    score,          # SCORE tab
 ) = cached_load(uploaded_file)
+
+# -----------------------------------------------------
+# ✅ DEFINE A ROBUST COUNTRY UNIVERSE (CRITICAL FIX)
+# -----------------------------------------------------
+
+def country_set(df):
+    return set(c for c in df.columns if c != "date")
+
+valid_countries = (
+    country_set(score)
+    & country_set(country_ts)
+    & country_set(s1)
+    & country_set(s2)
+    & country_set(s3)
+)
+
+countries = sorted(valid_countries)
+
+# -----------------------------------------------------
 
 page = st.sidebar.radio(
     "Page",
@@ -107,8 +126,7 @@ if page == "Signals":
 
     st.header("🔍 Signal Oversight")
 
-    countries = [c for c in country_ts.columns if c != "date"]
-    country = st.selectbox("Select country", sorted(countries))
+    country = st.selectbox("Select country", countries)
 
     end = country_ts["date"].max()
     start = end - pd.DateOffset(months=36)
@@ -164,13 +182,14 @@ if page == "Signal Summary":
         format_func=lambda d: d.strftime("%B %Y")
     )
 
-    score_row = score.set_index("date").loc[selected_date]
-    summary = pd.DataFrame({"Score": score_row})
+    summary = pd.DataFrame(
+        {"Score": score.set_index("date").loc[selected_date, countries]}
+    )
 
-    summary["TR"] = country_ts.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["S1"] = s1.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["S2"] = s2.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["S3"] = s3.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["TR"] = country_ts.set_index("date").loc[selected_date, countries]
+    summary["S1"] = s1.set_index("date").loc[selected_date, countries]
+    summary["S2"] = s2.set_index("date").loc[selected_date, countries]
+    summary["S3"] = s3.set_index("date").loc[selected_date, countries]
 
     summary["Pass Trend"] = (
         (summary["TR"] > summary["S1"]) &
@@ -215,11 +234,11 @@ if page == "Diagnostics & Governance":
     # -------------------------------------------------
     st.subheader("1️⃣ Why is a country failing the trend filter?")
 
-    diag = pd.DataFrame(index=score.columns)
-    diag["TR"] = country_ts.set_index("date").loc[selected_date]
-    diag["S1"] = s1.set_index("date").loc[selected_date]
-    diag["S2"] = s2.set_index("date").loc[selected_date]
-    diag["S3"] = s3.set_index("date").loc[selected_date]
+    diag = pd.DataFrame(index=countries)
+    diag["TR"] = country_ts.set_index("date").loc[selected_date, countries]
+    diag["S1"] = s1.set_index("date").loc[selected_date, countries]
+    diag["S2"] = s2.set_index("date").loc[selected_date, countries]
+    diag["S3"] = s3.set_index("date").loc[selected_date, countries]
 
     def fail_reason(r):
         if r["TR"] <= r["S1"]:
@@ -248,16 +267,16 @@ if page == "Diagnostics & Governance":
     # -------------------------------------------------
     st.subheader("2️⃣ Regime Stability (Full History)")
 
-    def pass_rate(country):
-        tr = country_ts.set_index("date")[country]
-        s1c = s1.set_index("date")[country]
-        s2c = s2.set_index("date")[country]
-        s3c = s3.set_index("date")[country]
+    def pass_rate(c):
+        tr = country_ts.set_index("date")[c]
+        s1c = s1.set_index("date")[c]
+        s2c = s2.set_index("date")[c]
+        s3c = s3.set_index("date")[c]
         return ((tr > s1c) & (tr > s2c) & (tr > s3c)).mean() * 100
 
-    stability = pd.DataFrame({
-        "Pass Rate (%)": {c: pass_rate(c) for c in score.columns}
-    }).sort_values("Pass Rate (%)")
+    stability = pd.DataFrame(
+        {"Pass Rate (%)": {c: pass_rate(c) for c in countries}}
+    ).sort_values("Pass Rate (%)")
 
     st.dataframe(
         stability.style.format({"Pass Rate (%)": "{:.1f}%"}),
@@ -270,10 +289,10 @@ if page == "Diagnostics & Governance":
     st.subheader("3️⃣ Regime Context – Have we seen this before?")
 
     def breadth(dt):
-        tr = country_ts.set_index("date").loc[dt]
-        s1d = s1.set_index("date").loc[dt]
-        s2d = s2.set_index("date").loc[dt]
-        s3d = s3.set_index("date").loc[dt]
+        tr = country_ts.set_index("date").loc[dt, countries]
+        s1d = s1.set_index("date").loc[dt, countries]
+        s2d = s2.set_index("date").loc[dt, countries]
+        s3d = s3.set_index("date").loc[dt, countries]
         return ((tr > s1d) & (tr > s2d) & (tr > s3d)).mean()
 
     breadth_series = pd.Series({d: breadth(d) for d in signal_dates})
@@ -303,7 +322,7 @@ if page == "Diagnostics & Governance":
         "This page provides governance‑grade diagnostics:\n\n"
         "- Explicit reasons for each country passing or failing trend\n"
         "- Long‑run stability statistics by country\n"
-        "- Regime context vs historical breadth\n\n"
-        "All views are strictly aligned to Signal‑date holdings "
-        "and use the Score tab as the full cross‑sectional universe."
+        "- Historical context for today’s regime\n\n"
+        "All views are aligned to Signal‑date holdings and use a "
+        "consistent, validated country universe across all signals."
     )
