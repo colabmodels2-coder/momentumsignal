@@ -1,18 +1,16 @@
-# EMD Signal Dashboard
+# Momentum Signal Dashboard
 
-Streamlit dashboard for visualising systematic EMD signal strategies.
+Streamlit dashboard for visualising momentum-based country allocation strategies.
 
-## Inputs
-- `country_index_ts.csv`: country total return indices
-- `signal.csv`: monthly Top‑X country selections
-- `signal_performance.csv`: pre‑computed strategy returns
+## Data
+A single Excel file uploaded at runtime containing:
+- Country Index TS
+- Signal
+- Signal Performance
 
-## Philosophy
-- Signals are computed externally (Excel)
-- Python aggregates and visualises only
-- No signal logic is re‑implemented
+Excel remains the source of truth for all signal logic.
 
 ## Deployment
-1. Push repo to GitHub
-2. Connect to Streamlit Community Cloud
-3. Set entry point: `app.py`
+- Push repo to GitHub
+- Deploy via Streamlit Community Cloud
+- Entry point: app.py
