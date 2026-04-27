@@ -1,4 +1,4 @@
-import streamlit as st
+as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -25,24 +25,20 @@ def to_long(df, value_name):
 
 
 def compute_forward_returns(ts_df, horizon=1):
+    """
+    Forward returns in PERCENT terms (e.g. 1.2 = +1.2%)
+    """
     ts_long = to_long(ts_df, "level")
-    ts_long["fwd_return"] = (
+    ts_long["fwd_return_pct"] = (
         ts_long
         .groupby("country")["level"]
         .shift(-horizon) / ts_long["level"] - 1
-    )
-    return ts_long.dropna(subset=["fwd_return"])
+    ) * 100
+    return ts_long.dropna(subset=["fwd_return_pct"])
 
 
-def score_history_metrics(score_df):
-    score_long = to_long(score_df, "score")
-    score_long["pct"] = score_long.groupby("country")["score"].rank(pct=True)
-    score_long["zscore"] = (
-        score_long
-        .groupby("country")["score"]
-        .transform(lambda x: (x - x.mean()) / x.std())
-    )
-    return score_long
+def score_long_format(score_df):
+    return to_long(score_df, "score")
 
 
 def trend_diagnostics(ts, s1, s2, s3):
@@ -52,9 +48,10 @@ def trend_diagnostics(ts, s1, s2, s3):
     s3l = to_long(s3, "s3")
 
     df = (
-        tr.merge(s1l, on=["date", "country"], how="left")
-          .merge(s2l, on=["date", "country"], how="left")
-          .merge(s3l, on=["date", "country"], how="left")
+        tr
+        .merge(s1l, on=["date", "country"], how="left")
+        .merge(s2l, on=["date", "country"], how="left")
+        .merge(s3l, on=["date", "country"], how="left")
     )
 
     df["pass_trend"] = (
@@ -166,7 +163,7 @@ if page == "Performance":
         st.pyplot(plot_return_distribution(perf, window=12))
 
 # =====================================================
-# SIGNALS PAGE (PER-COUNTRY)
+# SIGNALS PAGE
 # =====================================================
 
 if page == "Signals":
@@ -210,7 +207,7 @@ if page == "Signals":
         st.pyplot(fig)
 
 # =====================================================
-# SIGNAL SUMMARY PAGE (SIGNAL-DATE ALIGNED)
+# SIGNAL SUMMARY PAGE
 # =====================================================
 
 if page == "Signal Summary":
@@ -254,14 +251,14 @@ if page == "Signal Summary":
     st.pyplot(fig)
 
 # =====================================================
-# SIGNAL ANALYTICS PAGE (INSTITUTIONAL)
+# SIGNAL ANALYTICS PAGE
 # =====================================================
 
 if page == "Signal Analytics":
 
     st.header("🧪 Signal Analytics & Historical Context")
 
-    score_long = score_history_metrics(score)
+    score_long = score_long_format(score)
     fwd = compute_forward_returns(country_ts, 1)
     merged = score_long.merge(fwd, on=["date", "country"], how="inner")
     trend_hist = trend_diagnostics(country_ts, s1, s2, s3)
@@ -274,12 +271,12 @@ if page == "Signal Analytics":
         format_func=lambda d: d.strftime("%B %Y")
     )
 
-    # ---- Extremeness
-    st.subheader("Score Extremeness")
+    # ---- Extremeness (absolute scores)
+    st.subheader("Score Extremeness (Absolute Levels)")
 
     cs = score_long[score_long["date"] == current_date]
     st.dataframe(
-        cs[["country", "score", "pct", "zscore"]].sort_values("pct", ascending=False),
+        cs.sort_values("score", ascending=False),
         use_container_width=True
     )
 
@@ -302,51 +299,72 @@ if page == "Signal Analytics":
         .agg(pass_rate="mean", months_passing="sum", obs="count")
         .sort_values("pass_rate")
     )
-    st.dataframe(stability, use_container_width=True)
+    stability["pass_rate"] *= 100
 
-    # ---- Forward returns when scores similar
+    st.dataframe(
+        stability.style.format({"pass_rate": "{:.1f}%"}),
+        use_container_width=True
+    )
+
+    # ---- Forward returns at similar score levels
     st.subheader("Forward 1‑Month Returns at Similar Score Levels")
 
     c = st.selectbox("Select country", cs["country"].sort_values().unique())
-    pct_now = cs.loc[cs["country"] == c, "pct"].iloc[0]
+    score_now = cs.loc[cs["country"] == c, "score"].iloc[0]
+
+    lower = score_now * 0.9
+    upper = score_now * 1.1
 
     bucket = merged[
         (merged["country"] == c) &
-        (merged["pct"].between(pct_now - 0.05, pct_now + 0.05))
+        (merged["score"].between(lower, upper))
     ]
 
     col1, col2 = st.columns(2)
 
     with col1:
         fig, ax = plt.subplots()
-        ax.hist(bucket["fwd_return"], bins=20)
+        ax.hist(bucket["fwd_return_pct"], bins=20)
         ax.axvline(0, color="red", ls="--")
         ax.set_title("Forward 1‑Month Return Distribution")
+        ax.set_xlabel("Return (%)")
         st.pyplot(fig)
 
     with col2:
-        st.metric("Prob. Positive Return", f"{(bucket['fwd_return'] > 0).mean():.1%}")
-        st.metric("Median Return", f"{bucket['fwd_return'].median():.2%}")
+        st.metric("Prob. Positive Return", f"{(bucket['fwd_return_pct'] > 0).mean():.1%}")
+        st.metric("Median Return", f"{bucket['fwd_return_pct'].median():.2f}%")
 
-    # ---- Cross‑sectional relationship
+    # ---- Cross‑sectional score → return relationship
     st.subheader("Score → Forward Return Relationship")
 
-    merged["decile"] = (
-        merged.groupby("date")["score"]
-        .transform(lambda x: pd.qcut(x, 10, labels=False, duplicates='drop'))
+    merged["score_bucket"] = pd.qcut(
+        merged["score"],
+        10,
+        labels=False,
+        duplicates="drop"
     )
 
     dec = (
         merged
-        .groupby("decile")["fwd_return"]
+        .groupby("score_bucket")["fwd_return_pct"]
         .agg(mean="mean", median="median", hit=lambda x: (x > 0).mean())
     )
+    dec["hit"] *= 100
 
     fig, ax = plt.subplots()
     ax.plot(dec.index, dec["mean"], marker="o")
-    ax.set_title("Average Forward 1‑Month Return by Score Decile")
-    ax.set_xlabel("Score Decile (0 = lowest)")
-    ax.set_ylabel("Return")
+    ax.set_title("Average Forward 1‑Month Return by Score Bucket")
+    ax.set_xlabel("Score Bucket (low → high)")
+    ax.set_ylabel("Return (%)")
     st.pyplot(fig)
 
-    st.dataframe(dec, use_container_width=True)
+    st.dataframe(
+        dec.style.format(
+            {
+                "mean": "{:.2f}%",
+                "median": "{:.2f}%",
+                "hit": "{:.1f}%"
+            }
+        ),
+        use_container_width=True
+    )
