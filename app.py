@@ -47,8 +47,8 @@ def cached_load(file):
     s1,
     s2,
     s3,
-    score_filter,  # still available if needed elsewhere
-    score,         # SCORE TAB (used for Signal Summary)
+    score_filter,  # retained for other uses
+    score,         # SCORE tab (used for Signal Summary universe)
 ) = cached_load(uploaded_file)
 
 # ============================
@@ -156,71 +156,78 @@ if page == "Signals":
         st.pyplot(fig)
 
 # =====================================================
-# SIGNAL SUMMARY PAGE (MONTHLY SELECTOR, CLEAN LABELS)
+# SIGNAL SUMMARY PAGE
+# (START‑OF‑MONTH, SIGNAL‑DATE ALIGNED)
 # =====================================================
 if page == "Signal Summary":
 
-    st.header("📊 Signal Summary – Cross‑Section")
+    st.header("📊 Signal Summary – Cross‑Section (Signal‑Date Aligned)")
 
-    # ----------------------------------
-    # Build MONTHLY selector from Score
-    # ----------------------------------
-    monthly_periods = (
-        pd.PeriodIndex(score["date"], freq="M")
+    # ---------------------------------------------------
+    # Signal dates define the evaluation dates
+    # (start‑of‑month holdings)
+    # ---------------------------------------------------
+    signal_dates = (
+        signal["date"]
+        .drop_duplicates()
         .sort_values()
-        .unique()
+        .reset_index(drop=True)
     )
 
-    selected_period = st.selectbox(
-        "Select signal month",
-        options=monthly_periods,
-        index=len(monthly_periods) - 1,
-        format_func=lambda p: p.strftime("%B %Y")  # e.g. March 2026
+    selected_date = st.selectbox(
+        "Select signal (holding) date",
+        options=signal_dates,
+        index=len(signal_dates) - 1,
+        format_func=lambda d: pd.to_datetime(d).strftime("%B %Y")
     )
 
-    # Convert month selection to month‑end timestamp
-    selected_date = selected_period.to_timestamp("M")
+    st.caption(f"Evaluated as of signal date: {selected_date.date()}")
 
-    # ----------------------------------
-    # Universe = SCORE tab
-    # ----------------------------------
+    # ---------------------------------------------------
+    # Universe = SCORE tab (ALL countries)
+    # ---------------------------------------------------
     score_row = score.set_index("date").loc[selected_date]
     summary = pd.DataFrame({"score": score_row})
 
-    # ----------------------------------
-    # Bring in TR + signal levels
-    # ----------------------------------
-    summary["tr"] = country_ts.set_index("date").loc[selected_date].reindex(summary.index)
+    # ---------------------------------------------------
+    # Bring in TR + S1 / S2 / S3 AT SAME DATE
+    # ---------------------------------------------------
+    summary["tr"] = (
+        country_ts
+        .set_index("date")
+        .loc[selected_date]
+        .reindex(summary.index)
+    )
+
     summary["s1"] = s1.set_index("date").loc[selected_date].reindex(summary.index)
     summary["s2"] = s2.set_index("date").loc[selected_date].reindex(summary.index)
     summary["s3"] = s3.set_index("date").loc[selected_date].reindex(summary.index)
 
-    # ----------------------------------
+    # ---------------------------------------------------
     # Trend rule
-    # FAIL if TR <= any MA or missing
-    # ----------------------------------
+    # FAIL if TR ≤ any MA or missing
+    # ---------------------------------------------------
     summary["pass_trend"] = (
         (summary["tr"] > summary["s1"]) &
         (summary["tr"] > summary["s2"]) &
         (summary["tr"] > summary["s3"])
     ).fillna(False)
 
-    # ----------------------------------
-    # Sort + colour
-    # ----------------------------------
+    # ---------------------------------------------------
+    # Sort for readability (fails first)
+    # ---------------------------------------------------
     fails = summary[~summary["pass_trend"]].sort_values("score")
     passes = summary[summary["pass_trend"]].sort_values("score")
-
     plot_df = pd.concat([fails, passes])
 
     colours = (
-        ["#d62728"] * len(fails) +
-        ["#1f77b4"] * len(passes)
+        ["#d62728"] * len(fails) +     # red = fail trend
+        ["#1f77b4"] * len(passes)      # blue = pass trend
     )
 
-    # ----------------------------------
+    # ---------------------------------------------------
     # Plot
-    # ----------------------------------
+    # ---------------------------------------------------
     fig, ax = plt.subplots(figsize=(9, max(6, len(plot_df) * 0.28)))
 
     ax.barh(
@@ -232,7 +239,8 @@ if page == "Signal Summary":
     )
 
     ax.set_title(
-        f"Score (All Countries) with Trend Confirmation – {selected_period.strftime('%B %Y')}"
+        f"Score (All Countries) with Trend Confirmation – "
+        f"{pd.to_datetime(selected_date).strftime('%B %Y')}"
     )
     ax.set_xlabel("Score")
     ax.set_ylabel("Country")
