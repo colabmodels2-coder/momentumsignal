@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 from src.data_loader import load_all_data
 from src.performance import compute_cumulative_returns
@@ -8,8 +10,6 @@ from src.charts import (
     plot_drawdowns,
     plot_rolling_returns,
     plot_return_distribution,
-    plot_signal_trend,
-    plot_score_filter
 )
 
 # ============================
@@ -40,17 +40,16 @@ st.title("📊 Momentum Signal Dashboard")
 # ============================
 page = st.sidebar.radio(
     "Page",
-    ["Performance", "Signals"]
+    ["Performance", "Signals", "Signal Summary"]
 )
 
 # =====================================================
-# PERFORMANCE PAGE (existing functionality)
+# PERFORMANCE PAGE
 # =====================================================
 if page == "Performance":
 
     st.sidebar.header("Controls")
 
-    # Strategy selector (robust)
     strategy_options = sorted(signal_perf["strategy"].unique())
     default_strategy = "Top5" if "Top5" in strategy_options else strategy_options[0]
     default_index = strategy_options.index(default_strategy)
@@ -75,9 +74,6 @@ if page == "Performance":
         & (signal_perf["date"] <= pd.to_datetime(date_range[1]))
     ].copy()
 
-    # ----------------------------
-    # Current signal snapshot
-    # ----------------------------
     st.subheader("📌 Current Signal")
 
     latest_date = signal["date"].max()
@@ -95,9 +91,6 @@ if page == "Performance":
         hide_index=True
     )
 
-    # ----------------------------
-    # Performance charts
-    # ----------------------------
     st.subheader("📈 Strategy Performance")
 
     cum_perf = compute_cumulative_returns(perf)
@@ -110,9 +103,6 @@ if page == "Performance":
     with col2:
         st.pyplot(plot_drawdowns(cum_perf))
 
-    # ----------------------------
-    # Rolling analytics
-    # ----------------------------
     st.subheader("🔁 Rolling Analytics")
 
     col3, col4 = st.columns(2)
@@ -124,7 +114,7 @@ if page == "Performance":
         st.pyplot(plot_return_distribution(perf, window=12))
 
 # =====================================================
-# SIGNALS PAGE (new oversight view)
+# SIGNALS PAGE (per‑country oversight)
 # =====================================================
 if page == "Signals":
 
@@ -145,29 +135,66 @@ if page == "Signals":
     s3_ = slice_df(s3)
     score_ = slice_df(score_filter)
 
-    st.caption(
-        f"Showing last 36 months: {start_date.date()} → {end_date.date()}"
-    )
-
     col1, col2 = st.columns(2)
 
     with col1:
-        st.pyplot(
-            plot_signal_trend(
-                ts["date"],
-                ts[country],
-                s1_[country],
-                s2_[country],
-                s3_[country],
-                country
-            )
-        )
+        fig, ax = plt.subplots()
+        ax.plot(ts["date"], ts[country], label="Total Return", linewidth=2)
+        ax.plot(s1_["date"], s1_[country], linestyle="--", label="S1")
+        ax.plot(s2_["date"], s2_[country], linestyle="--", label="S2")
+        ax.plot(s3_["date"], s3_[country], linestyle="--", label="S3")
+
+        ax.set_title(f"{country} – TR & Moving Averages (36m)")
+        ax.legend()
+        ax.grid(True)
+
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+        fig.autofmt_xdate()
+
+        st.pyplot(fig)
 
     with col2:
-        st.pyplot(
-            plot_score_filter(
-                score_["date"],
-                score_[country],
-                country
-            )
-        )
+        fig, ax = plt.subplots()
+        ax.plot(score_["date"], score_[country], color="black", linewidth=2)
+        ax.axhline(0, color="red", linestyle="--", alpha=0.6)
+
+        ax.set_title(f"{country} – Score Filter (36m)")
+        ax.grid(True)
+
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+        fig.autofmt_xdate()
+
+        st.pyplot(fig)
+
+# =====================================================
+# SIGNAL SUMMARY PAGE (cross‑sectional scores)
+# =====================================================
+if page == "Signal Summary":
+
+    st.header("📊 Signal Summary – Cross‑Section")
+
+    latest_date = score_filter["date"].max()
+
+    score_snapshot = (
+        score_filter
+        .set_index("date")
+        .loc[latest_date]
+        .dropna()
+        .sort_values(ascending=True)
+    )
+
+    fig, ax = plt.subplots(figsize=(8, max(6, len(score_snapshot) * 0.25)))
+
+    ax.barh(
+        score_snapshot.index,
+        score_snapshot.values
+    )
+
+    ax.set_title(f"Score Filter – {latest_date.date()}")
+    ax.set_xlabel("Score")
+    ax.set_ylabel("Country")
+    ax.grid(axis="x", alpha=0.5)
+
+    st.pyplot(fig)
