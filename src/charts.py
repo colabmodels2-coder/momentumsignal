@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 from src.performance import compute_drawdown, rolling_12m_returns
 
-
 def plot_cumulative_returns(cum_df, strategy):
     fig, ax = plt.subplots()
     ax.plot(cum_df["date"], cum_df["cum_return"])
@@ -9,7 +8,6 @@ def plot_cumulative_returns(cum_df, strategy):
     ax.set_xlabel("Date")
     ax.set_ylabel("Growth of $1")
     return fig
-
 
 def plot_drawdowns(cum_df):
     drawdown = compute_drawdown(cum_df)
@@ -20,7 +18,6 @@ def plot_drawdowns(cum_df):
     ax.set_ylabel("Drawdown")
     return fig
 
-
 def plot_rolling_returns(perf_df, window=12):
     roll = rolling_12m_returns(perf_df, window)
     fig, ax = plt.subplots()
@@ -29,7 +26,6 @@ def plot_rolling_returns(perf_df, window=12):
     ax.set_xlabel("Date")
     ax.set_ylabel("Return")
     return fig
-
 
 def plot_return_distribution(perf_df, window=12):
     roll = rolling_12m_returns(perf_df, window)
