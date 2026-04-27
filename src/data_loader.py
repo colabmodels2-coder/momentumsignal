@@ -1,19 +1,35 @@
 import pandas as pd
 
+EXCEL_PATH = "data/emd_signals.xlsx"
+
 def load_all_data():
-    country_ts = pd.read_csv(
-        "data/country_index_ts.csv",
-        parse_dates=["date"]
-    )
+    # Country total return indices (wide format, same as Excel)
+    country_ts = pd.read_excel(
+        EXCEL_PATH,
+        sheet_name="Country Index TS",
+        parse_dates=["Date"]
+    ).rename(columns={"Date": "date"})
 
-    signal = pd.read_csv(
-        "data/signal.csv",
-        parse_dates=["date"]
-    )
+    # Signal selections
+    signal = pd.read_excel(
+        EXCEL_PATH,
+        sheet_name="Signal",
+        parse_dates=["Date"]
+    ).rename(columns={
+        "Date": "date",
+        "Rank": "rank",
+        "Country": "country"
+    })
 
-    signal_perf = pd.read_csv(
-        "data/signal_performance.csv",
-        parse_dates=["date"]
-    )
+    # Strategy performance
+    signal_perf = pd.read_excel(
+        EXCEL_PATH,
+        sheet_name="Signal Performance",
+        parse_dates=["Date"]
+    ).rename(columns={
+        "Date": "date",
+        "Strategy": "strategy",
+        "Return": "return"
+    })
 
     return country_ts, signal, signal_perf
