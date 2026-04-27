@@ -155,13 +155,13 @@ if page == "Signals":
         st.pyplot(fig)
 
 # =====================================================
-# SIGNAL SUMMARY PAGE (HISTORICAL + TREND CHECK)
+# SIGNAL SUMMARY PAGE (FIXED: ALL COUNTRIES SHOWN)
 # =====================================================
 if page == "Signal Summary":
 
     st.header("📊 Signal Summary – Cross‑Section")
 
-    # Date selector (aligned to available signal dates)
+    # ---- Select historical date ----
     available_dates = (
         score_filter["date"]
         .dropna()
@@ -176,27 +176,31 @@ if page == "Signal Summary":
         format_func=lambda d: pd.to_datetime(d).strftime("%Y-%m")
     )
 
-    # Pull aligned cross‑section
-    summary = pd.DataFrame({
-        "score": score_filter.set_index("date").loc[selected_date],
-        "tr": country_ts.set_index("date").loc[selected_date],
-        "s1": s1.set_index("date").loc[selected_date],
-        "s2": s2.set_index("date").loc[selected_date],
-        "s3": s3.set_index("date").loc[selected_date],
-    })
+    # ---- Start from SCORE (full universe) ----
+    scores = score_filter.set_index("date").loc[selected_date]
 
-    summary = summary.dropna(subset=["score"])
+    summary = pd.DataFrame({"score": scores})
 
-    # Trend rule: FAIL if TR <= any MA
+    # ---- Bring in TR / signals WITHOUT dropping ----
+    summary["tr"] = country_ts.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["s1"] = s1.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["s2"] = s2.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["s3"] = s3.set_index("date").loc[selected_date].reindex(summary.index)
+
+    # ---- Trend rule ----
+    # FAIL if TR <= any signal OR any signal missing
     summary["pass_trend"] = (
         (summary["tr"] > summary["s1"]) &
         (summary["tr"] > summary["s2"]) &
         (summary["tr"] > summary["s3"])
     )
 
-    # Separate for visual clarity
+    summary["pass_trend"] = summary["pass_trend"].fillna(False)
+
+    # ---- Sort for clarity: fails first ----
     fails = summary[~summary["pass_trend"]].sort_values("score")
     passes = summary[summary["pass_trend"]].sort_values("score")
+
     plot_df = pd.concat([fails, passes])
 
     colours = (
@@ -204,7 +208,9 @@ if page == "Signal Summary":
         ["#1f77b4"] * len(passes)     # blue = pass trend
     )
 
+    # ---- Plot ----
     fig, ax = plt.subplots(figsize=(9, max(6, len(plot_df) * 0.28)))
+
     ax.barh(
         plot_df.index,
         plot_df["score"],
@@ -225,7 +231,7 @@ if page == "Signal Summary":
     import matplotlib.patches as mpatches
     legend_handles = [
         mpatches.Patch(color="#1f77b4", label="TR > S1, S2, S3 (Pass)"),
-        mpatches.Patch(color="#d62728", label="TR ≤ one or more signals (Fail)")
+        mpatches.Patch(color="#d62728", label="TR ≤ one or more signals or missing (Fail)")
     ]
     ax.legend(handles=legend_handles, loc="lower right")
 
