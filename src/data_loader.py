@@ -25,17 +25,17 @@ def load_all_data():
     # ---------------------------
     # Signal (Top-X selections)
     # ---------------------------
-    signal = pd.read_excel(
-        uploaded_file,
-        sheet_name="Signal",
-        engine="openpyxl"
-    ).rename(columns={
-        "Date": "date",
-        "Rank": "rank",
-        "Country": "country"
-    })
+signal = pd.read_excel(
+    uploaded_file,
+    sheet_name="Signal",
+    engine="openpyxl"
+).rename(columns={
+    "Dates": "date",
+    "Rank": "rank",
+    "Country": "country"
+})
 
-    signal["date"] = pd.to_datetime(signal["date"])
+signal["date"] = pd.to_datetime(signal["date"])
 
     # ---------------------------
     # Signal Performance (WIDE → LONG)
