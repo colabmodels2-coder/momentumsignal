@@ -6,18 +6,18 @@ def load_all_data():
     """
     Loads all data from a single uploaded Excel file.
 
-    Expected Excel structure:
+    Excel structure (as implemented):
 
     1. Country Index TS
        - Column: Dates
-       - Other columns: country total return indices (wide)
+       - Other columns: country TR indices (wide)
 
     2. Signal (RANK MATRIX)
        - Columns: Dates, 1, 2, 3, 4, 5
-       - Values under 1–5 are country names
+       - Values are country names
 
     3. Signal Performance (WIDE)
-       - Columns: Dates, Top1, Top2, Top3, Top4, Top5
+       - Columns: Dates, Top1 ... Top5 (+ others ignored)
     """
 
     uploaded_file = st.file_uploader(
@@ -53,8 +53,11 @@ def load_all_data():
         engine="openpyxl"
     )
 
+    # ✅ NORMALISE ALL COLUMN NAMES TO STRINGS
+    signal_wide.columns = signal_wide.columns.map(str)
+
     required_signal_cols = {"Dates", "1", "2", "3", "4", "5"}
-    missing_signal = required_signal_cols - set(signal_wide.columns.astype(str))
+    missing_signal = required_signal_cols - set(signal_wide.columns)
 
     if missing_signal:
         st.error(f"Signal sheet missing required columns: {missing_signal}")
@@ -63,7 +66,7 @@ def load_all_data():
     signal_wide = signal_wide.rename(columns={"Dates": "date"})
     signal_wide["date"] = pd.to_datetime(signal_wide["date"])
 
-    # Reshape ranks into (date, rank, country)
+    # Reshape to long format: (date, rank, country)
     signal = signal_wide.melt(
         id_vars="date",
         value_vars=["1", "2", "3", "4", "5"],
@@ -82,6 +85,8 @@ def load_all_data():
         sheet_name="Signal Performance",
         engine="openpyxl"
     )
+
+    signal_perf_wide.columns = signal_perf_wide.columns.map(str)
 
     if "Dates" not in signal_perf_wide.columns:
         st.error("Signal Performance must contain a 'Dates' column.")
@@ -102,8 +107,6 @@ def load_all_data():
         value_vars=strategy_cols,
         var_name="strategy",
         value_name="return"
-    )
-
-    signal_perf = signal_perf.dropna(subset=["return"])
+    ).dropna(subset=["return"])
 
     return country_ts, signal, signal_perf
