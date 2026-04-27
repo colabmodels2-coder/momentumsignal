@@ -7,7 +7,9 @@ from src.charts import (
     plot_cumulative_returns,
     plot_drawdowns,
     plot_rolling_returns,
-    plot_return_distribution
+    plot_return_distribution,
+    plot_signal_trend,
+    plot_score_filter
 )
 
 st.set_page_config(
