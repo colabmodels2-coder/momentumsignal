@@ -3,22 +3,6 @@ import streamlit as st
 
 @st.cache_data(show_spinner=False)
 def load_all_data():
-    """
-    Loads all data from a single uploaded Excel file.
-
-    Excel structure (as implemented):
-
-    1. Country Index TS
-       - Column: Dates
-       - Other columns: country TR indices (wide)
-
-    2. Signal (RANK MATRIX)
-       - Columns: Dates, 1, 2, 3, 4, 5
-       - Values are country names
-
-    3. Signal Performance (WIDE)
-       - Columns: Dates, Top1 ... Top5 (+ others ignored)
-    """
 
     uploaded_file = st.file_uploader(
         "Upload Momentum Signal Excel file",
@@ -28,9 +12,9 @@ def load_all_data():
     if uploaded_file is None:
         st.stop()
 
-    # ====================================================
+    # =========================
     # Country Index TS
-    # ====================================================
+    # =========================
     country_ts = pd.read_excel(
         uploaded_file,
         sheet_name="Country Index TS",
@@ -44,29 +28,25 @@ def load_all_data():
     country_ts = country_ts.rename(columns={"Dates": "date"})
     country_ts["date"] = pd.to_datetime(country_ts["date"])
 
-    # ====================================================
-    # Signal (RANK MATRIX → LONG FORMAT)
-    # ====================================================
+    # =========================
+    # Signal (rank matrix)
+    # =========================
     signal_wide = pd.read_excel(
         uploaded_file,
         sheet_name="Signal",
         engine="openpyxl"
     )
 
-    # ✅ NORMALISE ALL COLUMN NAMES TO STRINGS
     signal_wide.columns = signal_wide.columns.map(str)
 
     required_signal_cols = {"Dates", "1", "2", "3", "4", "5"}
-    missing_signal = required_signal_cols - set(signal_wide.columns)
-
-    if missing_signal:
-        st.error(f"Signal sheet missing required columns: {missing_signal}")
+    if not required_signal_cols.issubset(signal_wide.columns):
+        st.error("Signal sheet must contain columns: Dates, 1–5")
         st.stop()
 
     signal_wide = signal_wide.rename(columns={"Dates": "date"})
     signal_wide["date"] = pd.to_datetime(signal_wide["date"])
 
-    # Reshape to long format: (date, rank, country)
     signal = signal_wide.melt(
         id_vars="date",
         value_vars=["1", "2", "3", "4", "5"],
@@ -77,9 +57,9 @@ def load_all_data():
     signal["rank"] = signal["rank"].astype(int)
     signal = signal.dropna(subset=["country"])
 
-    # ====================================================
-    # Signal Performance (WIDE → LONG)
-    # ====================================================
+    # =========================
+    # Signal Performance
+    # =========================
     signal_perf_wide = pd.read_excel(
         uploaded_file,
         sheet_name="Signal Performance",
@@ -96,11 +76,6 @@ def load_all_data():
     signal_perf_wide["date"] = pd.to_datetime(signal_perf_wide["date"])
 
     strategy_cols = ["Top1", "Top2", "Top3", "Top4", "Top5"]
-    missing_strategies = [c for c in strategy_cols if c not in signal_perf_wide.columns]
-
-    if missing_strategies:
-        st.error(f"Signal Performance missing strategy columns: {missing_strategies}")
-        st.stop()
 
     signal_perf = signal_perf_wide.melt(
         id_vars="date",
@@ -109,4 +84,22 @@ def load_all_data():
         value_name="return"
     ).dropna(subset=["return"])
 
-    return country_ts, signal, signal_perf
+    # =========================
+    # S1 / S2 / S3 / Score Filter
+    # =========================
+    def load_signal_sheet(name):
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=name,
+            engine="openpyxl"
+        )
+        df = df.rename(columns={"Dates": "date"})
+        df["date"] = pd.to_datetime(df["date"])
+        return df
+
+    s1 = load_signal_sheet("S1")
+    s2 = load_signal_sheet("S2")
+    s3 = load_signal_sheet("S3")
+    score_filter = load_signal_sheet("Score Filter")
+
+    return country_ts, signal, signal_perf, s1, s2, s3, score_filter
