@@ -38,7 +38,6 @@ strategy = st.sidebar.selectbox(
     options=strategy_options,
     index=default_index
 )
-)
 
 date_range = st.sidebar.date_input(
     "Date range",
