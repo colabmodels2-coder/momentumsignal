@@ -1,7 +1,8 @@
-lit as st
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+
 
 from src.data_loader import load_all_data
 from src.performance import compute_cumulative_returns
