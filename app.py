@@ -27,10 +27,17 @@ country_ts, signal, signal_perf = load_all_data()
 # ---------------------------
 st.sidebar.header("Controls")
 
+# Build ordered list of strategies safely
+strategy_options = sorted(signal_perf["strategy"].unique())
+
+default_strategy = "Top5" if "Top5" in strategy_options else strategy_options[0]
+default_index = strategy_options.index(default_strategy)
+
 strategy = st.sidebar.selectbox(
     "Strategy",
-    options=signal_perf["strategy"].unique(),
-    index=signal_perf["strategy"].tolist().index("Top5") if "Top5" in signal_perf["strategy"].values else 0
+    options=strategy_options,
+    index=default_index
+)
 )
 
 date_range = st.sidebar.date_input(
