@@ -13,13 +13,13 @@ def load_all_data():
     country_ts = pd.read_excel(
         uploaded_file,
         sheet_name="Country Index TS",
-        parse_dates=["Date"]
+        parse_dates=["Dates"]
     ).rename(columns={"Date": "date"})
 
     signal = pd.read_excel(
         uploaded_file,
         sheet_name="Signal",
-        parse_dates=["Date"]
+        parse_dates=["Dates"]
     ).rename(columns={
         "Date": "date",
         "Rank": "rank",
@@ -29,7 +29,7 @@ def load_all_data():
     signal_perf = pd.read_excel(
         uploaded_file,
         sheet_name="Signal Performance",
-        parse_dates=["Date"]
+        parse_dates=["Dates"]
     ).rename(columns={
         "Date": "date",
         "Strategy": "strategy",
