@@ -23,7 +23,7 @@ st.set_page_config(
 st.title("📊 Momentum Signal Dashboard")
 
 # ============================
-# File uploader (MUST NOT be cached)
+# File uploader (NOT cached)
 # ============================
 uploaded_file = st.file_uploader(
     "Upload Momentum Signal Excel file",
@@ -33,6 +33,9 @@ uploaded_file = st.file_uploader(
 if uploaded_file is None:
     st.stop()
 
+# ============================
+# Cached data load
+# ============================
 @st.cache_data(show_spinner=False)
 def cached_load(file):
     return load_all_data(file)
@@ -56,7 +59,7 @@ page = st.sidebar.radio(
 )
 
 # =====================================================
-# PERFORMANCE PAGE (RESTORED)
+# PERFORMANCE PAGE
 # =====================================================
 if page == "Performance":
 
@@ -64,7 +67,12 @@ if page == "Performance":
 
     strategy_options = sorted(signal_perf["strategy"].unique())
     default_strategy = "Top5" if "Top5" in strategy_options else strategy_options[0]
-    strategy = st.sidebar.selectbox("Strategy", strategy_options)
+
+    strategy = st.sidebar.selectbox(
+        "Strategy",
+        options=strategy_options,
+        index=strategy_options.index(default_strategy)
+    )
 
     perf = signal_perf[signal_perf["strategy"] == strategy].copy()
 
@@ -74,6 +82,7 @@ if page == "Performance":
     current_signal = signal[signal["date"] == latest_date].sort_values("rank")
 
     st.write(f"**As of:** {latest_date.date()}")
+
     st.dataframe(
         current_signal[["rank", "country"]],
         hide_index=True,
@@ -99,14 +108,14 @@ if page == "Performance":
         st.pyplot(plot_return_distribution(perf, window=12))
 
 # =====================================================
-# SIGNALS PAGE (DATE LABELS CLEAN)
+# SIGNALS PAGE (PER‑COUNTRY OVERSIGHT)
 # =====================================================
 if page == "Signals":
 
     st.header("🔍 Signal Oversight")
 
     countries = [c for c in country_ts.columns if c != "date"]
-    country = st.selectbox("Select Country", sorted(countries))
+    country = st.selectbox("Select country", sorted(countries))
 
     end_date = country_ts["date"].max()
     start_date = end_date - pd.DateOffset(months=36)
@@ -146,39 +155,78 @@ if page == "Signals":
         st.pyplot(fig)
 
 # =====================================================
-# SIGNAL SUMMARY PAGE (COLOUR FIXED PROPERLY)
+# SIGNAL SUMMARY PAGE (HISTORICAL + TREND CHECK)
 # =====================================================
 if page == "Signal Summary":
 
     st.header("📊 Signal Summary – Cross‑Section")
 
-    latest_date = score_filter["date"].max()
+    # Date selector (aligned to available signal dates)
+    available_dates = (
+        score_filter["date"]
+        .dropna()
+        .sort_values()
+        .unique()
+    )
 
+    selected_date = st.selectbox(
+        "Select signal date",
+        options=available_dates,
+        index=len(available_dates) - 1,
+        format_func=lambda d: pd.to_datetime(d).strftime("%Y-%m")
+    )
+
+    # Pull aligned cross‑section
     summary = pd.DataFrame({
-        "score": score_filter.set_index("date").loc[latest_date],
-        "tr": country_ts.set_index("date").loc[latest_date],
-        "s1": s1.set_index("date").loc[latest_date],
-        "s2": s2.set_index("date").loc[latest_date],
-        "s3": s3.set_index("date").loc[latest_date],
+        "score": score_filter.set_index("date").loc[selected_date],
+        "tr": country_ts.set_index("date").loc[selected_date],
+        "s1": s1.set_index("date").loc[selected_date],
+        "s2": s2.set_index("date").loc[selected_date],
+        "s3": s3.set_index("date").loc[selected_date],
     })
 
-    # ✅ Explicit rule: RED if TR <= any MA
+    summary = summary.dropna(subset=["score"])
+
+    # Trend rule: FAIL if TR <= any MA
     summary["pass_trend"] = (
         (summary["tr"] > summary["s1"]) &
         (summary["tr"] > summary["s2"]) &
         (summary["tr"] > summary["s3"])
     )
 
-    summary = summary.dropna(subset=["score"]).sort_values("score")
+    # Separate for visual clarity
+    fails = summary[~summary["pass_trend"]].sort_values("score")
+    passes = summary[summary["pass_trend"]].sort_values("score")
+    plot_df = pd.concat([fails, passes])
 
-    colours = ["tab:blue" if x else "red" for x in summary["pass_trend"]]
+    colours = (
+        ["#d62728"] * len(fails) +    # red = fail trend
+        ["#1f77b4"] * len(passes)     # blue = pass trend
+    )
 
-    fig, ax = plt.subplots(figsize=(8, max(6, len(summary) * 0.25)))
-    ax.barh(summary.index, summary["score"], color=colours)
+    fig, ax = plt.subplots(figsize=(9, max(6, len(plot_df) * 0.28)))
+    ax.barh(
+        plot_df.index,
+        plot_df["score"],
+        color=colours,
+        edgecolor="black",
+        alpha=0.85
+    )
 
-    ax.set_title(f"Score Filter with Trend Confirmation – {latest_date.date()}")
+    ax.set_title(
+        f"Score Filter with Trend Confirmation – "
+        f"{pd.to_datetime(selected_date).strftime('%Y-%m')}"
+    )
     ax.set_xlabel("Score")
     ax.set_ylabel("Country")
-    ax.grid(axis="x", alpha=0.5)
+    ax.grid(axis="x", alpha=0.4)
+
+    # Legend
+    import matplotlib.patches as mpatches
+    legend_handles = [
+        mpatches.Patch(color="#1f77b4", label="TR > S1, S2, S3 (Pass)"),
+        mpatches.Patch(color="#d62728", label="TR ≤ one or more signals (Fail)")
+    ]
+    ax.legend(handles=legend_handles, loc="lower right")
 
     st.pyplot(fig)
