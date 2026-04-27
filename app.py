@@ -22,7 +22,7 @@ st.title("📊 EMD Systematic Signal Dashboard")
 # ---------------------------
 # Load data
 # ---------------------------
-country_ts, signal, signal_perf = load_all_data()
+country_ts, signal, signal_perf, s1, s2, s3, score_filter = load_all_data()
 
 # ---------------------------
 # Sidebar
