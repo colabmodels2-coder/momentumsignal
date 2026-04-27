@@ -1,18 +1,23 @@
 import pandas as pd
-
-EXCEL_PATH = "data/emd_signals.xlsx"
+import streamlit as st
 
 def load_all_data():
-    # Country total return indices (wide format, same as Excel)
+    uploaded_file = st.file_uploader(
+        "Upload EMD signal Excel file",
+        type=["xlsx"]
+    )
+
+    if uploaded_file is None:
+        st.stop()
+
     country_ts = pd.read_excel(
-        EXCEL_PATH,
+        uploaded_file,
         sheet_name="Country Index TS",
         parse_dates=["Date"]
     ).rename(columns={"Date": "date"})
 
-    # Signal selections
     signal = pd.read_excel(
-        EXCEL_PATH,
+        uploaded_file,
         sheet_name="Signal",
         parse_dates=["Date"]
     ).rename(columns={
@@ -21,9 +26,8 @@ def load_all_data():
         "Country": "country"
     })
 
-    # Strategy performance
     signal_perf = pd.read_excel(
-        EXCEL_PATH,
+        uploaded_file,
         sheet_name="Signal Performance",
         parse_dates=["Date"]
     ).rename(columns={
