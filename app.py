@@ -155,13 +155,15 @@ if page == "Signals":
         st.pyplot(fig)
 
 # =====================================================
-# SIGNAL SUMMARY PAGE (FIXED: ALL COUNTRIES SHOWN)
+# SIGNAL SUMMARY PAGE (CORRECT AS-OF TREND TEST)
 # =====================================================
 if page == "Signal Summary":
 
     st.header("📊 Signal Summary – Cross‑Section")
 
-    # ---- Select historical date ----
+    # -----------------------------
+    # Date selector (monthly)
+    # -----------------------------
     available_dates = (
         score_filter["date"]
         .dropna()
@@ -176,43 +178,70 @@ if page == "Signal Summary":
         format_func=lambda d: pd.to_datetime(d).strftime("%Y-%m")
     )
 
-    # ---- Start from SCORE (full universe) ----
-    scores = score_filter.set_index("date").loc[selected_date]
+    # -----------------------------
+    # Helper: wide → long
+    # -----------------------------
+    def to_long(df, name):
+        return (
+            df
+            .melt(id_vars="date", var_name="country", value_name=name)
+            .sort_values("date")
+        )
 
-    summary = pd.DataFrame({"score": scores})
+    tr_long = to_long(country_ts, "tr")
+    s1_long = to_long(s1, "s1")
+    s2_long = to_long(s2, "s2")
+    s3_long = to_long(s3, "s3")
+    score_long = to_long(score_filter, "score")
 
-    # ---- Bring in TR / signals WITHOUT dropping ----
-    summary["tr"] = country_ts.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["s1"] = s1.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["s2"] = s2.set_index("date").loc[selected_date].reindex(summary.index)
-    summary["s3"] = s3.set_index("date").loc[selected_date].reindex(summary.index)
+    # -----------------------------
+    # Base universe = SCORE
+    # -----------------------------
+    base = score_long[score_long["date"] == selected_date].copy()
 
-    # ---- Trend rule ----
-    # FAIL if TR <= any signal OR any signal missing
-    summary["pass_trend"] = (
-        (summary["tr"] > summary["s1"]) &
-        (summary["tr"] > summary["s2"]) &
-        (summary["tr"] > summary["s3"])
+    # -----------------------------
+    # AS-OF alignment (critical)
+    # -----------------------------
+    base = pd.merge_asof(
+        base.sort_values("date"),
+        tr_long.sort_values("date"),
+        on="date",
+        by="country",
+        direction="backward"
     )
+    base = pd.merge_asof(base, s1_long, on="date", by="country", direction="backward")
+    base = pd.merge_asof(base, s2_long, on="date", by="country", direction="backward")
+    base = pd.merge_asof(base, s3_long, on="date", by="country", direction="backward")
 
-    summary["pass_trend"] = summary["pass_trend"].fillna(False)
+    # -----------------------------
+    # Correct trend rule
+    # FAIL if TR <= any MA or missing
+    # -----------------------------
+    base["pass_trend"] = (
+        (base["tr"] > base["s1"]) &
+        (base["tr"] > base["s2"]) &
+        (base["tr"] > base["s3"])
+    ).fillna(False)
 
-    # ---- Sort for clarity: fails first ----
-    fails = summary[~summary["pass_trend"]].sort_values("score")
-    passes = summary[summary["pass_trend"]].sort_values("score")
-
+    # -----------------------------
+    # Sort + colour
+    # -----------------------------
+    fails = base[~base["pass_trend"]].sort_values("score")
+    passes = base[base["pass_trend"]].sort_values("score")
     plot_df = pd.concat([fails, passes])
 
     colours = (
-        ["#d62728"] * len(fails) +    # red = fail trend
-        ["#1f77b4"] * len(passes)     # blue = pass trend
+        ["#d62728"] * len(fails) +   # red = fail trend
+        ["#1f77b4"] * len(passes)    # blue = pass trend
     )
 
-    # ---- Plot ----
+    # -----------------------------
+    # Plot
+    # -----------------------------
     fig, ax = plt.subplots(figsize=(9, max(6, len(plot_df) * 0.28)))
 
     ax.barh(
-        plot_df.index,
+        plot_df["country"],
         plot_df["score"],
         color=colours,
         edgecolor="black",
@@ -227,11 +256,10 @@ if page == "Signal Summary":
     ax.set_ylabel("Country")
     ax.grid(axis="x", alpha=0.4)
 
-    # Legend
     import matplotlib.patches as mpatches
     legend_handles = [
         mpatches.Patch(color="#1f77b4", label="TR > S1, S2, S3 (Pass)"),
-        mpatches.Patch(color="#d62728", label="TR ≤ one or more signals or missing (Fail)")
+        mpatches.Patch(color="#d62728", label="TR ≤ one or more signals (Fail)")
     ]
     ax.legend(handles=legend_handles, loc="lower right")
 
