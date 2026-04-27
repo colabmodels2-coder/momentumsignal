@@ -3,7 +3,7 @@ import pandas as pd
 def load_all_data(uploaded_file):
     """
     Load and parse all Excel sheets.
-    This function is SAFE to cache because it contains NO widgets.
+    This function contains NO Streamlit widgets and is safe to cache.
     """
 
     # =========================
@@ -56,17 +56,45 @@ def load_all_data(uploaded_file):
     ).dropna(subset=["return"])
 
     # =========================
-    # S1 / S2 / S3 / Score Filter
+    # Helper for signal sheets
     # =========================
-    def load_sheet(name):
-        df = pd.read_excel(uploaded_file, sheet_name=name, engine="openpyxl")
-        df = df.rename(columns={"Dates": "date"})
+    def load_signal_sheet(name):
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=name,
+            engine="openpyxl"
+        ).rename(columns={"Dates": "date"})
         df["date"] = pd.to_datetime(df["date"])
         return df
 
-    s1 = load_sheet("S1")
-    s2 = load_sheet("S2")
-    s3 = load_sheet("S3")
-    score_filter = load_sheet("Score Filter")
+    # =========================
+    # S1 / S2 / S3 / Score Filter
+    # =========================
+    s1 = load_signal_sheet("S1")
+    s2 = load_signal_sheet("S2")
+    s3 = load_signal_sheet("S3")
+    score_filter = load_signal_sheet("Score Filter")
 
-    return country_ts, signal, signal_perf, s1, s2, s3, score_filter
+    # =========================
+    # ✅ SCORE TAB (THIS WAS MISSING)
+    # =========================
+    score = pd.read_excel(
+        uploaded_file,
+        sheet_name="Score",
+        engine="openpyxl"
+    ).rename(columns={"Dates": "date"})
+    score["date"] = pd.to_datetime(score["date"])
+
+    # =========================
+    # ✅ RETURN ORDER MUST MATCH app.py
+    # =========================
+    return (
+        country_ts,
+        signal,
+        signal_perf,
+        s1,
+        s2,
+        s3,
+        score_filter,
+        score,
+    )
