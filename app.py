@@ -47,7 +47,8 @@ def cached_load(file):
     s1,
     s2,
     s3,
-    score_filter,
+    score_filter,  # still used elsewhere
+    score,         # ✅ Score tab (NEW, required)
 ) = cached_load(uploaded_file)
 
 # ============================
@@ -108,7 +109,7 @@ if page == "Performance":
         st.pyplot(plot_return_distribution(perf, window=12))
 
 # =====================================================
-# SIGNALS PAGE (PER‑COUNTRY OVERSIGHT)
+# SIGNALS PAGE (PER-COUNTRY OVERSIGHT)
 # =====================================================
 if page == "Signals":
 
@@ -127,7 +128,7 @@ if page == "Signals":
     s1_ = sl(s1)
     s2_ = sl(s2)
     s3_ = sl(s3)
-    sc = sl(score_filter)
+    sc = sl(score)
 
     col1, col2 = st.columns(2)
 
@@ -155,21 +156,16 @@ if page == "Signals":
         st.pyplot(fig)
 
 # =====================================================
-# SIGNAL SUMMARY PAGE (CORRECT AS-OF TREND TEST)
+# SIGNAL SUMMARY PAGE (✅ SCORE TAB + CORRECT TREND TEST)
 # =====================================================
 if page == "Signal Summary":
 
-    st.header("📊 Signal Summary – Cross‑Section")
+    st.header("📊 Signal Summary – Cross-Section")
 
     # -----------------------------
-    # Date selector (monthly)
+    # Date selector from SCORE tab
     # -----------------------------
-    available_dates = (
-        score_filter["date"]
-        .dropna()
-        .sort_values()
-        .unique()
-    )
+    available_dates = score["date"].dropna().sort_values().unique()
 
     selected_date = st.selectbox(
         "Select signal date",
@@ -179,60 +175,41 @@ if page == "Signal Summary":
     )
 
     # -----------------------------
-    # Helper: wide → long
+    # Build universe from SCORE
     # -----------------------------
-    def to_long(df, name):
-        return (
-            df
-            .melt(id_vars="date", var_name="country", value_name=name)
-            .sort_values("date")
-        )
+    score_row = score.set_index("date").loc[selected_date]
 
-    tr_long = to_long(country_ts, "tr")
-    s1_long = to_long(s1, "s1")
-    s2_long = to_long(s2, "s2")
-    s3_long = to_long(s3, "s3")
-    score_long = to_long(score_filter, "score")
+    summary = pd.DataFrame({"score": score_row})
 
     # -----------------------------
-    # Base universe = SCORE
+    # Bring in TR + signals (aligned)
     # -----------------------------
-    base = score_long[score_long["date"] == selected_date].copy()
+    summary["tr"] = country_ts.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["s1"] = s1.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["s2"] = s2.set_index("date").loc[selected_date].reindex(summary.index)
+    summary["s3"] = s3.set_index("date").loc[selected_date].reindex(summary.index)
 
     # -----------------------------
-    # AS-OF alignment (critical)
+    # Trend rule
+    # FAIL if TR ≤ any MA or missing
     # -----------------------------
-    base = pd.merge_asof(
-        base.sort_values("date"),
-        tr_long.sort_values("date"),
-        on="date",
-        by="country",
-        direction="backward"
-    )
-    base = pd.merge_asof(base, s1_long, on="date", by="country", direction="backward")
-    base = pd.merge_asof(base, s2_long, on="date", by="country", direction="backward")
-    base = pd.merge_asof(base, s3_long, on="date", by="country", direction="backward")
-
-    # -----------------------------
-    # Correct trend rule
-    # FAIL if TR <= any MA or missing
-    # -----------------------------
-    base["pass_trend"] = (
-        (base["tr"] > base["s1"]) &
-        (base["tr"] > base["s2"]) &
-        (base["tr"] > base["s3"])
+    summary["pass_trend"] = (
+        (summary["tr"] > summary["s1"]) &
+        (summary["tr"] > summary["s2"]) &
+        (summary["tr"] > summary["s3"])
     ).fillna(False)
 
     # -----------------------------
-    # Sort + colour
+    # Sort + colours
     # -----------------------------
-    fails = base[~base["pass_trend"]].sort_values("score")
-    passes = base[base["pass_trend"]].sort_values("score")
+    fails = summary[~summary["pass_trend"]].sort_values("score")
+    passes = summary[summary["pass_trend"]].sort_values("score")
+
     plot_df = pd.concat([fails, passes])
 
     colours = (
-        ["#d62728"] * len(fails) +   # red = fail trend
-        ["#1f77b4"] * len(passes)    # blue = pass trend
+        ["#d62728"] * len(fails) +
+        ["#1f77b4"] * len(passes)
     )
 
     # -----------------------------
@@ -241,7 +218,7 @@ if page == "Signal Summary":
     fig, ax = plt.subplots(figsize=(9, max(6, len(plot_df) * 0.28)))
 
     ax.barh(
-        plot_df["country"],
+        plot_df.index,
         plot_df["score"],
         color=colours,
         edgecolor="black",
@@ -249,7 +226,7 @@ if page == "Signal Summary":
     )
 
     ax.set_title(
-        f"Score Filter with Trend Confirmation – "
+        f"Score (All Countries) with Trend Confirmation – "
         f"{pd.to_datetime(selected_date).strftime('%Y-%m')}"
     )
     ax.set_xlabel("Score")
@@ -257,10 +234,12 @@ if page == "Signal Summary":
     ax.grid(axis="x", alpha=0.4)
 
     import matplotlib.patches as mpatches
-    legend_handles = [
-        mpatches.Patch(color="#1f77b4", label="TR > S1, S2, S3 (Pass)"),
-        mpatches.Patch(color="#d62728", label="TR ≤ one or more signals (Fail)")
-    ]
-    ax.legend(handles=legend_handles, loc="lower right")
+    ax.legend(
+        handles=[
+            mpatches.Patch(color="#1f77b4", label="TR > S1, S2, S3 (Pass)"),
+            mpatches.Patch(color="#d62728", label="TR ≤ one or more signals (Fail)")
+        ],
+        loc="lower right"
+    )
 
     st.pyplot(fig)
