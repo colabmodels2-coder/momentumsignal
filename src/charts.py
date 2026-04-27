@@ -35,3 +35,22 @@ def plot_return_distribution(perf_df, window=12):
     ax.set_xlabel("Return")
     ax.set_ylabel("Frequency")
     return fig
+
+def plot_signal_trend(dates, tr, s1, s2, s3, country):
+    fig, ax = plt.subplots()
+    ax.plot(dates, tr, label="Total Return", linewidth=2)
+    ax.plot(dates, s1, linestyle="--", label="S1")
+    ax.plot(dates, s2, linestyle="--", label="S2")
+    ax.plot(dates, s3, linestyle="--", label="S3")
+    ax.set_title(f"{country} – TR & Moving Averages (36m)")
+    ax.legend()
+    ax.grid(True)
+    return fig
+
+def plot_score_filter(dates, score, country):
+    fig, ax = plt.subplots()
+    ax.plot(dates, score, color="black", linewidth=2)
+    ax.axhline(0, color="red", linestyle="--", alpha=0.6)
+    ax.set_title(f"{country} – Score Filter (36m)")
+    ax.grid(True)
+    return fig
