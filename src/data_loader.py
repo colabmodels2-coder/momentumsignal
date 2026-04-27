@@ -6,19 +6,18 @@ def load_all_data():
     """
     Loads all data from a single uploaded Excel file.
 
-    Expected sheets and structure:
+    Expected Excel structure:
 
     1. Country Index TS
-       - Date column: 'Dates'
+       - Column: Dates
        - Other columns: country total return indices (wide)
 
-    2. Signal
-       - Columns: 'Dates', 'Rank', 'Country'
+    2. Signal (RANK MATRIX)
+       - Columns: Dates, 1, 2, 3, 4, 5
+       - Values under 1–5 are country names
 
-    3. Signal Performance (wide)
-       - Date column: 'Dates'
-       - Strategy return columns: Top1, Top2, Top3, Top4, Top5
-       - Other columns (cumulative, drawdown, etc.) are ignored
+    3. Signal Performance (WIDE)
+       - Columns: Dates, Top1, Top2, Top3, Top4, Top5
     """
 
     uploaded_file = st.file_uploader(
@@ -29,9 +28,9 @@ def load_all_data():
     if uploaded_file is None:
         st.stop()
 
-    # =========================
+    # ====================================================
     # Country Index TS
-    # =========================
+    # ====================================================
     country_ts = pd.read_excel(
         uploaded_file,
         sheet_name="Country Index TS",
@@ -39,40 +38,45 @@ def load_all_data():
     )
 
     if "Dates" not in country_ts.columns:
-        st.error("Country Index TS sheet must contain a 'Dates' column.")
+        st.error("Country Index TS must contain a 'Dates' column.")
         st.stop()
 
     country_ts = country_ts.rename(columns={"Dates": "date"})
     country_ts["date"] = pd.to_datetime(country_ts["date"])
 
-    # =========================
-    # Signal (Top-X selections)
-    # =========================
-    signal = pd.read_excel(
+    # ====================================================
+    # Signal (RANK MATRIX → LONG FORMAT)
+    # ====================================================
+    signal_wide = pd.read_excel(
         uploaded_file,
         sheet_name="Signal",
         engine="openpyxl"
     )
 
-    required_signal_cols = {"Dates", "Rank", "Country"}
-    missing_signal = required_signal_cols - set(signal.columns)
+    required_signal_cols = {"Dates", "1", "2", "3", "4", "5"}
+    missing_signal = required_signal_cols - set(signal_wide.columns.astype(str))
 
     if missing_signal:
         st.error(f"Signal sheet missing required columns: {missing_signal}")
         st.stop()
 
-    signal = signal.rename(columns={
-        "Dates": "date",
-        "Rank": "rank",
-        "Country": "country"
-    })
+    signal_wide = signal_wide.rename(columns={"Dates": "date"})
+    signal_wide["date"] = pd.to_datetime(signal_wide["date"])
 
-    signal["date"] = pd.to_datetime(signal["date"])
+    # Reshape ranks into (date, rank, country)
+    signal = signal_wide.melt(
+        id_vars="date",
+        value_vars=["1", "2", "3", "4", "5"],
+        var_name="rank",
+        value_name="country"
+    )
+
     signal["rank"] = signal["rank"].astype(int)
+    signal = signal.dropna(subset=["country"])
 
-    # =========================
+    # ====================================================
     # Signal Performance (WIDE → LONG)
-    # =========================
+    # ====================================================
     signal_perf_wide = pd.read_excel(
         uploaded_file,
         sheet_name="Signal Performance",
@@ -80,7 +84,7 @@ def load_all_data():
     )
 
     if "Dates" not in signal_perf_wide.columns:
-        st.error("Signal Performance sheet must contain a 'Dates' column.")
+        st.error("Signal Performance must contain a 'Dates' column.")
         st.stop()
 
     signal_perf_wide = signal_perf_wide.rename(columns={"Dates": "date"})
@@ -90,10 +94,7 @@ def load_all_data():
     missing_strategies = [c for c in strategy_cols if c not in signal_perf_wide.columns]
 
     if missing_strategies:
-        st.error(
-            f"Signal Performance sheet missing strategy return columns: "
-            f"{missing_strategies}"
-        )
+        st.error(f"Signal Performance missing strategy columns: {missing_strategies}")
         st.stop()
 
     signal_perf = signal_perf_wide.melt(
@@ -104,12 +105,5 @@ def load_all_data():
     )
 
     signal_perf = signal_perf.dropna(subset=["return"])
-
-    # =========================
-    # Final sanity checks
-    # =========================
-    if signal_perf.empty:
-        st.error("Signal Performance returned no data after reshaping.")
-        st.stop()
 
     return country_ts, signal, signal_perf
