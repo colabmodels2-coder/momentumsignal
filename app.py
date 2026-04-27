@@ -169,7 +169,7 @@ if page == "Signals":
         st.pyplot(fig)
 
 # =====================================================
-# SIGNAL SUMMARY PAGE (cross‑sectional scores)
+# SIGNAL SUMMARY PAGE (cross‑sectional + trend check)
 # =====================================================
 if page == "Signal Summary":
 
@@ -177,22 +177,47 @@ if page == "Signal Summary":
 
     latest_date = score_filter["date"].max()
 
-    score_snapshot = (
+    scores = (
         score_filter
         .set_index("date")
         .loc[latest_date]
         .dropna()
-        .sort_values(ascending=True)
     )
 
-    fig, ax = plt.subplots(figsize=(8, max(6, len(score_snapshot) * 0.25)))
+    tr_latest = country_ts.set_index("date").loc[latest_date]
+    s1_latest = s1.set_index("date").loc[latest_date]
+    s2_latest = s2.set_index("date").loc[latest_date]
+    s3_latest = s3.set_index("date").loc[latest_date]
+
+    summary = pd.DataFrame({
+        "score": scores,
+        "tr": tr_latest,
+        "s1": s1_latest,
+        "s2": s2_latest,
+        "s3": s3_latest
+    }).dropna()
+
+    summary["above_all_signals"] = (
+        (summary["tr"] > summary["s1"]) &
+        (summary["tr"] > summary["s2"]) &
+        (summary["tr"] > summary["s3"])
+    )
+
+    summary = summary.sort_values("score", ascending=True)
+
+    colors = summary["above_all_signals"].map(
+        lambda x: "tab:blue" if x else "red"
+    )
+
+    fig, ax = plt.subplots(figsize=(8, max(6, len(summary) * 0.25)))
 
     ax.barh(
-        score_snapshot.index,
-        score_snapshot.values
+        summary.index,
+        summary["score"],
+        color=colors
     )
 
-    ax.set_title(f"Score Filter – {latest_date.date()}")
+    ax.set_title(f"Score Filter with Trend Confirmation – {latest_date.date()}")
     ax.set_xlabel("Score")
     ax.set_ylabel("Country")
     ax.grid(axis="x", alpha=0.5)
