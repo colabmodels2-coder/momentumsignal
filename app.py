@@ -56,58 +56,57 @@ page = st.sidebar.radio(
 )
 
 # =====================================================
-# SIGNAL SUMMARY PAGE (FIXED TREND FILTER)
+# PERFORMANCE PAGE (RESTORED)
 # =====================================================
-if page == "Signal Summary":
+if page == "Performance":
 
-    st.header("📊 Signal Summary – Cross‑Section")
+    st.sidebar.header("Controls")
 
-    latest_date = score_filter["date"].max()
+    strategy_options = sorted(signal_perf["strategy"].unique())
+    default_strategy = "Top5" if "Top5" in strategy_options else strategy_options[0]
+    strategy = st.sidebar.selectbox("Strategy", strategy_options)
 
-    scores = score_filter.set_index("date").loc[latest_date]
-    tr = country_ts.set_index("date").loc[latest_date]
-    s1v = s1.set_index("date").loc[latest_date]
-    s2v = s2.set_index("date").loc[latest_date]
-    s3v = s3.set_index("date").loc[latest_date]
+    perf = signal_perf[signal_perf["strategy"] == strategy].copy()
 
-    summary = pd.DataFrame({
-        "score": scores,
-        "tr": tr,
-        "s1": s1v,
-        "s2": s2v,
-        "s3": s3v
-    }).dropna()
+    st.subheader("📌 Current Signal")
 
-    # ✅ Correct logic: RED if TR NOT above all three
-    summary["pass_trend"] = (
-        (summary["tr"] > summary["s1"]) &
-        (summary["tr"] > summary["s2"]) &
-        (summary["tr"] > summary["s3"])
+    latest_date = signal["date"].max()
+    current_signal = signal[signal["date"] == latest_date].sort_values("rank")
+
+    st.write(f"**As of:** {latest_date.date()}")
+    st.dataframe(
+        current_signal[["rank", "country"]],
+        hide_index=True,
+        use_container_width=True
     )
 
-    summary = summary.sort_values("score", ascending=True)
+    st.subheader("📈 Strategy Performance")
 
-    colours = summary["pass_trend"].map(lambda x: "tab:blue" if x else "red")
+    cum_perf = compute_cumulative_returns(perf)
 
-    fig, ax = plt.subplots(figsize=(8, max(6, len(summary) * 0.25)))
-    ax.barh(summary.index, summary["score"], color=colours)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.pyplot(plot_cumulative_returns(cum_perf, strategy))
+    with col2:
+        st.pyplot(plot_drawdowns(cum_perf))
 
-    ax.set_title(f"Score Filter with Trend Confirmation – {latest_date.date()}")
-    ax.set_xlabel("Score")
-    ax.set_ylabel("Country")
-    ax.grid(axis="x", alpha=0.5)
+    st.subheader("🔁 Rolling Analytics")
 
-    st.pyplot(fig)
+    col3, col4 = st.columns(2)
+    with col3:
+        st.pyplot(plot_rolling_returns(perf, window=12))
+    with col4:
+        st.pyplot(plot_return_distribution(perf, window=12))
 
 # =====================================================
-# SIGNALS PAGE (DATE LABELS FIXED)
+# SIGNALS PAGE (DATE LABELS CLEAN)
 # =====================================================
 if page == "Signals":
 
     st.header("🔍 Signal Oversight")
 
     countries = [c for c in country_ts.columns if c != "date"]
-    country = st.selectbox("Select country", sorted(countries))
+    country = st.selectbox("Select Country", sorted(countries))
 
     end_date = country_ts["date"].max()
     start_date = end_date - pd.DateOffset(months=36)
@@ -138,10 +137,48 @@ if page == "Signals":
 
     with col2:
         fig, ax = plt.subplots()
-        ax.plot(sc["date"], sc[country], color="black")
+        ax.plot(sc["date"], sc[country], color="black", lw=2)
         ax.axhline(0, color="red", ls="--")
         ax.grid(True)
         ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
         fig.autofmt_xdate()
         st.pyplot(fig)
+
+# =====================================================
+# SIGNAL SUMMARY PAGE (COLOUR FIXED PROPERLY)
+# =====================================================
+if page == "Signal Summary":
+
+    st.header("📊 Signal Summary – Cross‑Section")
+
+    latest_date = score_filter["date"].max()
+
+    summary = pd.DataFrame({
+        "score": score_filter.set_index("date").loc[latest_date],
+        "tr": country_ts.set_index("date").loc[latest_date],
+        "s1": s1.set_index("date").loc[latest_date],
+        "s2": s2.set_index("date").loc[latest_date],
+        "s3": s3.set_index("date").loc[latest_date],
+    })
+
+    # ✅ Explicit rule: RED if TR <= any MA
+    summary["pass_trend"] = (
+        (summary["tr"] > summary["s1"]) &
+        (summary["tr"] > summary["s2"]) &
+        (summary["tr"] > summary["s3"])
+    )
+
+    summary = summary.dropna(subset=["score"]).sort_values("score")
+
+    colours = ["tab:blue" if x else "red" for x in summary["pass_trend"]]
+
+    fig, ax = plt.subplots(figsize=(8, max(6, len(summary) * 0.25)))
+    ax.barh(summary.index, summary["score"], color=colours)
+
+    ax.set_title(f"Score Filter with Trend Confirmation – {latest_date.date()}")
+    ax.set_xlabel("Score")
+    ax.set_ylabel("Country")
+    ax.grid(axis="x", alpha=0.5)
+
+    st.pyplot(fig)
